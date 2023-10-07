@@ -4,6 +4,8 @@ import itertools
 import logging
 import warnings
 import pprint
+import torch.distributed as dist
+import time
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from enum import Enum
@@ -683,6 +685,7 @@ def gen_alias_from_base(aliased_base_tensor, target_meta_tensor, target_requires
 def to_fun(t):
     if isinstance(t, Tensor):
         out = torch._to_functional_tensor(t)
+        log.warning("to_fun %s %s %s", t.requires_grad, safe_is_leaf(t), t.grad_fn)
         torch._mirror_autograd_meta_to(t, out)
         return out
     else:
@@ -1155,6 +1158,7 @@ def maybe_to_fresh_input(idx, t, meta):
         if meta.requires_grad_info[mutated_inp_idx] and meta.input_info[idx].mutates_data:
             # Make sure the primal we pass to autograd.grad()
             # sees the tensor before the mutation
+            log.warning("cloning %s", t)
             return t.clone()
         if meta.requires_grad_info[mutated_inp_idx] and meta.input_info[idx].mutates_metadata:
             # Make sure the primal we pass to autograd.grad()
@@ -1314,11 +1318,14 @@ def create_joint(
         # Call the backwards pass
         if grad_primals:
             from torchviz import make_dot
+            for primal in grad_primals:
+                log.warning("INPUT\n%s", make_dot(primal))
             for out in needed_outs:
                 log.warning("DOT GRAPH\n%s", make_dot(out))
             with fx_traceback.preserve_node_meta():
                 # for full graph export, we always export a joint graph where we assume no tangents are needed.
                 if aot_config.no_tangents:
+                    assert False
                     assert len(needed_tangents) == 1 and needed_tangents[0].numel() == 1
                     backward_out = torch.autograd.grad(
                         needed_outs,
@@ -1326,6 +1333,12 @@ def create_joint(
                         allow_unused=True,
                     )
                 else:
+                    """
+                    if dist.get_rank() == 0:
+                        breakpoint()
+                    else:
+                        time.sleep(9999999)
+                    """
                     backward_out = torch.autograd.grad(
                         needed_outs,
                         grad_primals,
@@ -1554,7 +1567,7 @@ def aot_dispatch_base_graph(flat_fn, flat_args: List[Tensor], aot_config: AOTCon
     # there should be *NO* mutating ops in the graph at this point.
     copy_count = assert_functional_graph(fw_module.graph, allow_input_mutations=aot_config.keep_inference_input_mutations)
 
-    fw_module.graph.eliminate_dead_code()
+    #fw_module.graph.eliminate_dead_code()
     fw_module.recompile()
 
     copy_count2 = assert_functional_graph(fw_module.graph, allow_input_mutations=aot_config.keep_inference_input_mutations)
@@ -2814,7 +2827,7 @@ def aot_dispatch_autograd_graph(flat_fn, flat_args: List[Any], aot_config: AOTCo
     # a fake tensor. Unlikely.
     # See Note: [Fake Modules and AOTAutograd]
     torch._dynamo.utils.assert_no_fake_params_or_buffers(fx_g)
-    fx_g.graph.eliminate_dead_code()
+    #fx_g.graph.eliminate_dead_code()
     fx_g.recompile()
     # TODO: in AOTAutograd, we create metadata like _indices_of_inps_to_detach to detect
     # when we need to manually detach() some inputs in the forward.
