@@ -28,7 +28,6 @@ from .variables.tensor import (
     TensorWithTFOverrideVariable,
     UnspecializedPythonVariable,
 )
-from .variables.constant import ConstantVariable
 
 
 @dataclasses.dataclass
@@ -116,7 +115,6 @@ class PyCodegen:
                 SymNodeVariable,
                 UnspecializedPythonVariable,
                 NumpyNdarrayVariable,
-                torch._dynamo.variables.ctx_manager.CUDAStreamVariable,
                 torch._dynamo.variables.user_defined.AccumulateGradVariable,
             ),
         ):

@@ -1917,7 +1917,6 @@ class InstructionTranslatorBase(Checkpointable[InstructionTranslatorGraphState])
 
         return name
 
-
     @property
     def fake_mode(self):
         return self._fake_mode
@@ -2534,18 +2533,6 @@ class InliningInstructionTranslator(InstructionTranslatorBase):
     def RETURN_VALUE(self, inst):
         self.symbolic_result = self.pop()
         self.instruction_pointer = None
-
-    def GET_YIELD_FROM_ITER(self, inst):
-        tos = self.stack[-1]
-        if not isinstance(tos, ListIteratorVariable):
-            return self.GET_ITER(inst)
-
-    def YIELD_FROM(self, inst):
-        tos = self.stack[-1]
-        if isinstance(tos, ConstantVariable) and tos.value is None:
-            self.pop()
-            return
-        return self.FOR_ITER(inst)
 
 
 class InliningGeneratorInstructionTranslator(InliningInstructionTranslator):
